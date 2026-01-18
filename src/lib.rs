@@ -9,17 +9,17 @@
 #![deny(missing_copy_implementations)]
 #![deny(missing_docs)]
 
-extern crate sample;
+extern crate dasp;
 
+pub use dasp::frame::Frame;
+pub use dasp::sample::Sample;
 pub use mode::Mode;
 pub use peak::Peak;
 pub use rms::Rms;
-pub use sample::{Frame, Sample};
 
 pub mod mode;
 pub mod peak;
 pub mod rms;
-
 
 /// Iteratively extracts the amplitude envelope from an audio signal based on three parameters:
 ///
@@ -30,8 +30,9 @@ pub mod rms;
 /// Supports processing any `sample::Frame`
 #[derive(Copy, Clone, Debug)]
 pub struct EnvelopeDetector<F, M>
-    where F: Frame,
-          M: Mode<F>,
+where
+    F: Frame,
+    M: Mode<F>,
 {
     attack_gain: f32,
     release_gain: f32,
@@ -44,16 +45,14 @@ pub type RmsEnvelopeDetector<F> = EnvelopeDetector<F, Rms<F>>;
 /// An `EnvelopeDetector` that tracks the full wave `Peak` envelope of a signal.
 pub type PeakEnvelopeDetector<F> = EnvelopeDetector<F, Peak<peak::FullWave>>;
 
-
 fn calc_gain(n_frames: f32) -> f32 {
     ::std::f32::consts::E.powf(-1.0 / n_frames)
 }
 
-
 impl<F> EnvelopeDetector<F, Rms<F>>
-    where F: Frame,
+where
+    F: Frame,
 {
-
     /// Construct a new **Rms** **EnvelopeDetector**.
     pub fn rms(rms_window_frames: usize, attack_frames: f32, release_frames: f32) -> Self {
         let rms = Rms::new(rms_window_frames);
@@ -64,30 +63,28 @@ impl<F> EnvelopeDetector<F, Rms<F>>
     pub fn set_window_frames(&mut self, n_window_frames: usize) {
         self.mode.set_window_frames(n_window_frames);
     }
-
 }
 
 impl<F> EnvelopeDetector<F, Peak<peak::FullWave>>
-    where F: Frame,
+where
+    F: Frame,
 {
-
     /// Construct a new **Mono** **Peak** **EnvelopeDetector**.
     pub fn peak(attack_frames: f32, release_frames: f32) -> Self {
         let peak = Peak::full_wave();
         Self::new(peak, attack_frames, release_frames)
     }
-
 }
 
 impl<F, M> EnvelopeDetector<F, M>
-    where F: Frame,
-          M: Mode<F>,
+where
+    F: Frame,
+    M: Mode<F>,
 {
-
     fn new(mode: M, attack_frames: f32, release_frames: f32) -> Self {
         EnvelopeDetector {
             mode: mode,
-            last_env_frame: F::equilibrium(),
+            last_env_frame: F::EQUILIBRIUM,
             attack_gain: calc_gain(attack_frames),
             release_gain: calc_gain(release_frames),
         }
@@ -106,7 +103,10 @@ impl<F, M> EnvelopeDetector<F, M>
     /// Given the next input signal frame, detect and return the next envelope frame.
     pub fn next(&mut self, frame: F) -> F {
         let EnvelopeDetector {
-            attack_gain, release_gain, ref mut mode, ref mut last_env_frame,
+            attack_gain,
+            release_gain,
+            ref mut mode,
+            ref mut last_env_frame,
         } = *self;
 
         let mode_frame = mode.next_frame(frame);
@@ -126,9 +126,14 @@ impl<F, M> EnvelopeDetector<F, M>
     /// format.
     pub fn next_avg(&mut self, frame: F) -> <F::Sample as Sample>::Float {
         let next_frame = self.next(frame);
-        let equilibrium: F::Sample = Sample::equilibrium();
-        let sum = next_frame.channels().fold(equilibrium, |sum, s| sum.add_amp(s.to_sample()));
-        sum.to_float_sample() / (F::n_channels() as f32).to_sample()
-    }
+        let sum: <F::Sample as Sample>::Float = next_frame
+            .channels()
+            .map(|s| s.to_float_sample())
+            .fold(<F::Sample as Sample>::Float::EQUILIBRIUM, |acc, x| acc + x);
 
+        let denom: <F::Sample as Sample>::Float =
+            (F::CHANNELS as f32).to_sample::<<F::Sample as Sample>::Float>();
+
+        sum / denom
+    }
 }

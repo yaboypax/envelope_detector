@@ -2,15 +2,18 @@
 //!
 //! The primary type of interest in this module is the [**Rms**](./struct.Rms).
 
-use sample::{FloatSample, Frame, Sample};
-use std;
+use dasp::frame::Frame;
+use dasp::sample::FloatSample;
+use dasp::sample::Sample;
 
+use std;
 
 /// Iteratively extracts the RMS (root mean square) envelope from a window over a signal of
 /// sample `Frame`s.
 #[derive(Clone)]
 pub struct Rms<F>
-    where F: Frame,
+where
+    F: Frame,
 {
     /// The type of `Frame`s for which the RMS will be calculated.
     frame: std::marker::PhantomData<F>,
@@ -25,35 +28,38 @@ pub struct Rms<F>
 }
 
 impl<F> std::fmt::Debug for Rms<F>
-    where F: Frame,
-          F::Float: std::fmt::Debug,
+where
+    F: Frame,
+    F::Float: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-        write!(f, "Rms {{ frame: {:?}, window: {:?}, sum: {:?} }}",
-               &self.frame, &self.window, &self.sum)
+        write!(
+            f,
+            "Rms {{ frame: {:?}, window: {:?}, sum: {:?} }}",
+            &self.frame, &self.window, &self.sum
+        )
     }
 }
 
-
 impl<F> Rms<F>
-    where F: Frame,
+where
+    F: Frame,
 {
-
     /// Construct a new **Rms**.
     pub fn new(n_window_frames: usize) -> Self {
         Rms {
             frame: std::marker::PhantomData,
-            window: (0..n_window_frames).map(|_| Frame::equilibrium()).collect(),
-            sum: Frame::equilibrium(),
+            window: (0..n_window_frames).map(|_| Frame::EQUILIBRIUM).collect(),
+            sum: Frame::EQUILIBRIUM,
         }
     }
 
     /// Zeroes the sum and the buffer of the `window`.
     pub fn reset(&mut self) {
         for sample_square in &mut self.window {
-            *sample_square = Frame::equilibrium();
+            *sample_square = Frame::EQUILIBRIUM;
         }
-        self.sum = Frame::equilibrium();
+        self.sum = Frame::EQUILIBRIUM;
     }
 
     /// Set the size of the `window` as a number of frames.
@@ -68,9 +74,8 @@ impl<F> Rms<F>
     pub fn set_window_frames(&mut self, n_window_frames: usize) {
         let len = self.window.len();
         if len == n_window_frames {
-            return;
 
-        // If our window is too long, truncate it from the front (removing the olest frames).
+            // If our window is too long, truncate it from the front (removing the olest frames).
         } else if len > n_window_frames {
             let diff = len - n_window_frames;
             for _ in 0..diff {
@@ -82,7 +87,7 @@ impl<F> Rms<F>
         } else if len < n_window_frames {
             let diff = n_window_frames - len;
             for _ in 0..diff {
-                self.window.push_front(Frame::equilibrium());
+                self.window.push_front(Frame::EQUILIBRIUM);
             }
         }
     }
@@ -100,12 +105,12 @@ impl<F> Rms<F>
     /// The yielded RMS is the RMS of all frame squares in the `window` after the new frame is
     /// added.
     ///
-    /// Returns `Frame::equilibrium` if the `window` is empty.
+    /// Returns `FrameEQUILIBRIUM` if the `window` is empty.
     #[inline]
     pub fn next(&mut self, new_frame: F) -> F::Float {
         // If our **Window** has no length, there's nothing to calculate.
         if self.window.len() == 0 {
-            return Frame::equilibrium();
+            return Frame::EQUILIBRIUM;
         }
         self.pop_front();
         self.push_back(new_frame.to_float_frame());
@@ -118,7 +123,11 @@ impl<F> Rms<F>
         self.sum = self.sum.zip_map(removed_sample_square, |s, r| {
             let diff = s - r;
             // Don't let floating point rounding errors put us below 0.0.
-            if diff < Sample::equilibrium() { Sample::equilibrium() } else { diff }
+            if diff < Sample::EQUILIBRIUM {
+                Sample::EQUILIBRIUM
+            } else {
+                diff
+            }
         });
     }
 
@@ -137,5 +146,4 @@ impl<F> Rms<F>
         let num_frames_f = Sample::from_sample(self.window.len() as f32);
         self.sum.map(|s| (s / num_frames_f).sample_sqrt())
     }
-
 }
